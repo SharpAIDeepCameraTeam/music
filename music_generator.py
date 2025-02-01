@@ -44,88 +44,132 @@ def create_melody(key_obj, section_type, num_measures):
     return melody
 
 def create_sequence_from_scratch():
-    """Create a 30-measure ABA orchestral piece."""
+    """Create a new musical sequence from scratch."""
     score = music21.stream.Score()
     
-    # Create metadata
-    score.metadata = music21.metadata.Metadata()
-    score.metadata.title = "Orchestral Piece in ABA Form"
-    
-    # Fixed parameters
-    key = music21.key.Key('C')
-    time_sig = music21.meter.TimeSignature('4/4')
-    tempo = music21.tempo.MetronomeMark(number=120)
-    
-    # Create sections (10 measures each for ABA form)
-    section_A1 = create_melody(key, 'A', 10)
-    section_B = create_melody(key, 'B', 10)
-    section_A2 = create_melody(key, 'A', 10)
-    
-    # Combine all sections
-    melody = section_A1 + section_B + section_A2
-    
-    # Create orchestra parts
+    # Create parts for each instrument
     violin1 = music21.stream.Part()
     violin2 = music21.stream.Part()
     viola = music21.stream.Part()
     cello = music21.stream.Part()
     bass = music21.stream.Part()
     
-    # Set instruments
-    violin1.append(music21.instrument.Violin())
-    violin2.append(music21.instrument.Violin())
-    viola.append(music21.instrument.Viola())
-    cello.append(music21.instrument.Violoncello())
-    bass.append(music21.instrument.Contrabass())
+    # Set time signature and key
+    time_sig = music21.meter.TimeSignature('4/4')
+    key = music21.key.Key('G')  # G major, good for strings
     
-    # Add key, time signature, and tempo to all parts
+    # Add time signature and key to each part
     for part in [violin1, violin2, viola, cello, bass]:
-        part.append(key)
         part.append(time_sig)
-        part.append(tempo)
+        part.append(key)
     
-    # Add melody to first violin
-    for note in melody:
-        violin1.append(note)
+    # Create lead melody for Violin I (A section)
+    melody_a = [
+        ('G4', 2), ('B4', 2), ('D5', 2), ('G5', 2),  # Ascending G major
+        ('A5', 3), ('G5', 1), ('E5', 2), ('D5', 2),  # Melodic line
+        ('B4', 4), ('rest', 2), ('D5', 2),           # Rest and pickup
+        ('G5', 2), ('F#5', 1), ('E5', 1), ('D5', 2), ('B4', 2)  # Descending line
+    ]
     
-    # Create harmony parts
-    current_time = 0
-    for melody_note in melody:
-        # Get the current chord tones based on the melody note
-        scale_deg = key.getScale().getScaleDegreeFromPitch(melody_note.pitch)
-        
-        # Create harmony notes
-        if scale_deg in [1, 4, 5]:  # Major chord
-            intervals = [3, 7]  # Third and fifth
-        else:  # Minor chord
-            intervals = [4, 7]  # Minor third and fifth
-        
-        # Add harmony notes to other parts
-        v2_note = melody_note.transpose(-intervals[0])
-        viola_note = melody_note.transpose(-intervals[1])
-        cello_note = melody_note.transpose(-12)  # Octave below
-        bass_note = melody_note.transpose(-24)  # Two octaves below
-        
-        # Ensure notes are in appropriate ranges
-        while v2_note.pitch.midi < 55:  # G3
-            v2_note = v2_note.transpose(12)
-        while viola_note.pitch.midi < 48:  # C3
-            viola_note = viola_note.transpose(12)
-        while cello_note.pitch.midi < 36:  # C2
-            cello_note = cello_note.transpose(12)
-        while bass_note.pitch.midi < 28:  # E1
-            bass_note = bass_note.transpose(12)
-        
-        # Add notes to parts
-        violin2.insert(current_time, v2_note)
-        viola.insert(current_time, viola_note)
-        cello.insert(current_time, cello_note)
-        bass.insert(current_time, bass_note)
-        
-        current_time += melody_note.duration.quarterLength
+    # B section melody (more dramatic)
+    melody_b = [
+        ('A5', 2), ('B5', 2), ('C6', 3), ('A5', 1),  # Higher register
+        ('G5', 2), ('E5', 2), ('F#5', 3), ('D5', 1),  # Moving line
+        ('E5', 2), ('G5', 2), ('F#5', 3), ('E5', 1),  # Tension building
+        ('D5', 4), ('rest', 2), ('D5', 2)             # Resolution
+    ]
     
-    # Add all parts to score
+    # Function to create harmony notes based on melody
+    def create_harmony(melody_note, chord_type='major'):
+        if melody_note == 'rest':
+            return ['rest'] * 4
+        note_obj = music21.note.Note(melody_note)
+        if chord_type == 'major':
+            intervals = [3, 5, 7]  # Major chord
+        else:
+            intervals = [3, 5, 7]  # Could be modified for minor
+        harmony = []
+        for interval in intervals:
+            harmony_note = note_obj.transpose(interval)
+            harmony.append(harmony_note.nameWithOctave)
+        return harmony
+    
+    # Add notes to Violin I (lead)
+    def add_melody_to_violin1(melody):
+        for pitch, duration in melody:
+            if pitch == 'rest':
+                n = music21.note.Rest()
+            else:
+                n = music21.note.Note(pitch)
+            n.duration.quarterLength = duration
+            violin1.append(n)
+    
+    # Add harmony to other strings
+    def add_harmony(melody, parts):
+        for pitch, duration in melody:
+            harmony = create_harmony(pitch if pitch != 'rest' else 'rest')
+            for part, harm_pitch in zip(parts, harmony):
+                if harm_pitch == 'rest':
+                    n = music21.note.Rest()
+                else:
+                    n = music21.note.Note(harm_pitch)
+                    # Make harmony slightly softer than melody
+                    n.volume.velocity = 64
+                n.duration.quarterLength = duration
+                part.append(n)
+    
+    # Create A section
+    add_melody_to_violin1(melody_a)
+    add_harmony(melody_a, [violin2, viola, cello])
+    # Bass plays root notes
+    for pitch, duration in melody_a:
+        if pitch == 'rest':
+            n = music21.note.Rest()
+        else:
+            note_obj = music21.note.Note(pitch)
+            bass_note = note_obj.transpose(-12)  # One octave down
+            n = music21.note.Note(bass_note.nameWithOctave)
+            n.volume.velocity = 72
+        n.duration.quarterLength = duration
+        bass.append(n)
+    
+    # Create B section
+    add_melody_to_violin1(melody_b)
+    add_harmony(melody_b, [violin2, viola, cello])
+    # Bass continues with root notes
+    for pitch, duration in melody_b:
+        if pitch == 'rest':
+            n = music21.note.Rest()
+        else:
+            note_obj = music21.note.Note(pitch)
+            bass_note = note_obj.transpose(-12)
+            n = music21.note.Note(bass_note.nameWithOctave)
+            n.volume.velocity = 72
+        n.duration.quarterLength = duration
+        bass.append(n)
+    
+    # Repeat A section
+    add_melody_to_violin1(melody_a)
+    add_harmony(melody_a, [violin2, viola, cello])
+    for pitch, duration in melody_a:
+        if pitch == 'rest':
+            n = music21.note.Rest()
+        else:
+            note_obj = music21.note.Note(pitch)
+            bass_note = note_obj.transpose(-12)
+            n = music21.note.Note(bass_note.nameWithOctave)
+            n.volume.velocity = 72
+        n.duration.quarterLength = duration
+        bass.append(n)
+    
+    # Add dynamics
+    for part in [violin1, violin2, viola, cello, bass]:
+        f = music21.dynamics.Dynamic('f')
+        part.insert(0, f)
+    
+    # Add parts to score
     score.append([violin1, violin2, viola, cello, bass])
+    
     return score
 
 def export_to_musicxml(score, output_path):
@@ -133,6 +177,20 @@ def export_to_musicxml(score, output_path):
     try:
         # Ensure the output directory exists
         os.makedirs(os.path.dirname(output_path), exist_ok=True)
+        
+        # Add XML declaration and DOCTYPE
+        xml_content = '<?xml version="1.0" encoding=\'UTF-8\' standalone=\'no\' ?>\n'
+        xml_content += '<!DOCTYPE score-partwise PUBLIC "-//Recordare//DTD MusicXML 3.0 Partwise//EN" "http://www.musicxml.org/dtds/partwise.dtd">\n'
+        
+        # Add metadata
+        score.metadata = music21.metadata.Metadata()
+        score.metadata.composer = 'SoundWave Studios'
+        score.metadata.title = 'Orchestral Piece in ABA Form'
+        
+        # Add identification information
+        score.metadata.encoder = 'SoundWave Studios'
+        score.metadata.software = 'music21 v8.3.0'
+        score.metadata.encodingDate = music21.metadata.DateSingle('2024')
         
         # Set part names
         part_names = [
@@ -143,22 +201,37 @@ def export_to_musicxml(score, output_path):
             ("Contrabass", "Cb.")
         ]
         
+        # Create part group for strings
+        part_group = music21.layout.StaffGroup(
+            [score.parts[i] for i in range(len(score.parts))],
+            name='Strings',
+            abbreviation='Str.',
+            symbol='bracket'
+        )
+        score.insert(0, part_group)
+        
+        # Set part names and staff groups
         for part, (name, abbrev) in zip(score.parts, part_names):
             part.partName = name
             part.partAbbreviation = abbrev
-            # Add staff group
             part.staffGroup = ['strings']
         
-        # Add identification information
-        if not score.metadata:
-            score.metadata = music21.metadata.Metadata()
-        score.metadata.composer = 'SoundWave Studios'
-        score.metadata.title = 'Orchestral Piece in ABA Form'
-        score.metadata.date = music21.metadata.DateSingle('2024')
-        
         # Export to MusicXML
-        # Use format='musicxml' instead of just 'xml' for better compatibility
-        score.write(fmt='musicxml', fp=output_path, makeNotation=True)
+        temp_path = output_path + '.tmp'
+        score.write('musicxml', fp=temp_path)
+        
+        # Read the exported file and add proper headers
+        with open(temp_path, 'r') as f:
+            content = f.read()
+            # Remove existing XML declaration if present
+            if content.startswith('<?xml'):
+                content = '\n'.join(content.split('\n')[1:])
+            # Write final file with proper headers
+            with open(output_path, 'w') as out:
+                out.write(xml_content + content)
+        
+        # Clean up temporary file
+        os.remove(temp_path)
         
         # Verify the file was created and has content
         if not os.path.exists(output_path) or os.path.getsize(output_path) == 0:
