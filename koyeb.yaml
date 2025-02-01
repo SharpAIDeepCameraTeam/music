@@ -1,0 +1,22 @@
+name: soundwave-music-gen
+service:
+  app:
+    instance_type: micro
+    cpus: 1
+    memory: 2048
+    ports:
+      - port: 5001
+        protocol: http
+    routes:
+      - path: /
+        port: 5001
+    envs:
+      - key: FLASK_APP
+        value: app.py
+      - key: FLASK_ENV
+        value: production
+      - key: PORT
+        value: "5001"
+    buildpacks:
+      - docker
+    dockerfile: Dockerfile
