@@ -1,8 +1,5 @@
-tensorflow
-magenta
 music21==8.3.0
 flask==3.0.0
-python-dotenv
-note-seq
+python-dotenv==1.0.0
 Werkzeug==3.0.1
-gunicorn
+gunicorn==21.2.0
