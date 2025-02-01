@@ -8,16 +8,13 @@ WORKDIR /app
 RUN apt-get update && apt-get install -y \
     build-essential \
     libffi-dev \
-    sox \
-    libsox-dev \
-    libsox-fmt-all \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy requirements and environment files
-COPY requirements.txt environment.yml ./
+COPY requirements.txt ./
 
-# Install numpy first
-RUN pip install --no-cache-dir numpy
+# Install base dependencies first
+RUN pip install --no-cache-dir numpy typing_extensions
 
 # Install Python dependencies
 RUN pip install --no-cache-dir -r requirements.txt
