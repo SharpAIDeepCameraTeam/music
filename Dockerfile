@@ -1,4 +1,4 @@
-# Use Python 3.9 slim image
+# Use Python 3.9 for better compatibility with TensorFlow and Magenta
 FROM python:3.9-slim
 
 # Set working directory
@@ -8,30 +8,30 @@ WORKDIR /app
 RUN apt-get update && apt-get install -y \
     build-essential \
     libffi-dev \
+    libasound2-dev \
+    libjack-dev \
+    portaudio19-dev \
     && rm -rf /var/lib/apt/lists/*
 
-# Copy requirements and environment files
+# Copy requirements first for better caching
 COPY requirements.txt ./
 
-# Install base dependencies first
+# Install numpy and typing_extensions first
 RUN pip install --no-cache-dir numpy typing_extensions
 
-# Install Python dependencies
+# Install Python packages
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy the application code
+# Copy application code
 COPY . .
-
-# Create uploads directory
-RUN mkdir -p uploads
-
-# Expose port
-EXPOSE 5001
 
 # Set environment variables
 ENV FLASK_APP=app.py
 ENV FLASK_ENV=production
 ENV PORT=5001
 
+# Expose the port
+EXPOSE $PORT
+
 # Run the application
-CMD exec gunicorn --bind :$PORT app:app
+CMD ["gunicorn", "--bind", "0.0.0.0:5001", "app:app"]
