@@ -33,7 +33,11 @@ class EDMGenerator:
             ['i', 'v', 'VI', 'III'],    # Future bass style
             ['i', 'III', 'VII', 'VI'],  # Trance progression
         ]
-    
+        
+        # EDM structure parameters
+        self.section_length = 8  # 8 bars per section
+        self.buildup_length = 4  # 4 bars for buildup
+        
     def _download_bundle(self, model_name):
         """Download the bundle for the specified model."""
         bundle_file = f"{model_name}.mag"
@@ -111,6 +115,92 @@ class EDMGenerator:
         drums_lib.add_drums(sequence, drums_lib.DEFAULT_DRUM_TYPE)
         return sequence
 
+    def create_chromatic_buildup(self, start_pitch=60, measures=4):
+        """Create a chromatic buildup with increasing rhythm intensity."""
+        notes = []
+        base_divisions = [2, 4, 8, 16]  # Rhythmic divisions per measure (increasing intensity)
+        
+        for measure in range(measures):
+            divisions = base_divisions[measure]  # Get increasingly faster rhythms
+            notes_per_beat = divisions // 4
+            duration = 4.0 / divisions  # Quarter note = 1.0
+            
+            for beat in range(4 * notes_per_beat):
+                # Calculate pitch (rising chromatic scale)
+                current_pitch = start_pitch + (measure * 4) + (beat // notes_per_beat)
+                
+                # Create note
+                note = music21.note.Note(current_pitch)
+                note.duration = music21.duration.Duration(duration)
+                note.volume.velocity = 80 + (measure * 10)  # Increasing velocity
+                
+                # Add effects based on position
+                if beat % notes_per_beat == 0:
+                    note.volume.velocity += 10  # Accent beats
+                
+                notes.append(note)
+        
+        return notes
+    
+    def create_repeating_pattern(self, sequence, pattern_length=2):
+        """Create a repeating pattern from a sequence."""
+        if not sequence.notes:
+            return sequence
+        
+        # Extract the first pattern_length measures
+        pattern_duration = pattern_length * 4.0  # 4 beats per measure
+        pattern_notes = []
+        
+        for note in sequence.notes:
+            if note.start_time < pattern_duration:
+                pattern_notes.append(note)
+        
+        # Create repeating pattern
+        total_measures = 8  # Total length of the section
+        repeated_sequence = music_pb2.NoteSequence()
+        repeated_sequence.tempos.add(qpm=self.bpm)
+        repeated_sequence.ticks_per_quarter = sequence.ticks_per_quarter
+        
+        for measure in range(0, total_measures, pattern_length):
+            for note in pattern_notes:
+                new_note = repeated_sequence.notes.add()
+                new_note.CopyFrom(note)
+                new_note.start_time += measure * 4.0
+                new_note.end_time += measure * 4.0
+                
+                # Add slight variations to velocity
+                new_note.velocity = min(127, note.velocity + random.randint(-10, 10))
+        
+        return repeated_sequence
+    
+    def create_drum_buildup(self, measures=4):
+        """Create a drum buildup with increasing intensity."""
+        sequence = music_pb2.NoteSequence()
+        sequence.tempos.add(qpm=self.bpm)
+        sequence.ticks_per_quarter = 4
+        
+        # Define drum patterns with increasing intensity
+        patterns = [
+            # Measure 1: Basic kick and snare
+            [(36, 0), (38, 2)],
+            # Measure 2: Add hi-hats
+            [(36, 0), (38, 2), (42, 0.5), (42, 1.5), (42, 2.5), (42, 3.5)],
+            # Measure 3: Double time
+            [(36, i/2) for i in range(8)] + [(42, i/4) for i in range(16)],
+            # Measure 4: Roll
+            [(38, i/4) for i in range(16)] + [(42, i/8) for i in range(32)]
+        ]
+        
+        for measure, pattern in enumerate(patterns):
+            for pitch, offset in pattern:
+                note = sequence.notes.add()
+                note.pitch = pitch
+                note.start_time = measure * 4.0 + offset
+                note.end_time = note.start_time + 0.25
+                note.velocity = min(127, 80 + (measure * 15))  # Increasing velocity
+        
+        return sequence
+
 def create_edm_track():
     """Create a complete EDM track with melody and drums."""
     score = music21.stream.Score()
@@ -118,25 +208,36 @@ def create_edm_track():
     # Create EDM generator
     edm_gen = EDMGenerator()
     
-    # Generate parts
+    # Generate initial melody and drums
     melody_sequence = edm_gen.generate_edm_melody(length=32)
     drums_sequence = edm_gen.generate_drum_groove(length=32)
+    
+    # Create repeating sections
+    melody_sequence = edm_gen.create_repeating_pattern(melody_sequence, pattern_length=2)
+    drums_sequence = edm_gen.create_repeating_pattern(drums_sequence, pattern_length=2)
     
     # Convert melody sequence to music21
     melody_part = music21.stream.Part()
     melody_part.append(music21.instrument.ElectricPiano())  # Synth lead
     melody_part.append(music21.tempo.MetronomeMark(number=edm_gen.bpm))
     
+    # Add main melody
     for note in melody_sequence.notes:
         n = music21.note.Note(note.pitch)
         n.duration = music21.duration.Duration(note.end_time - note.start_time)
         n.volume.velocity = note.velocity
         melody_part.append(n)
     
+    # Add chromatic buildup
+    buildup_notes = edm_gen.create_chromatic_buildup(start_pitch=60, measures=4)
+    for note in buildup_notes:
+        melody_part.append(note)
+    
     # Convert drum sequence to music21
     drums_part = music21.stream.Part()
     drums_part.append(music21.instrument.BassDrum())  # EDM drums
     
+    # Add main drums
     for note in drums_sequence.notes:
         # Map drum pitches to standard MIDI drum map
         if note.pitch in [36, 35]:  # Bass drum
@@ -148,6 +249,13 @@ def create_edm_track():
         else:  # Other percussion
             n = music21.note.Note(note.pitch, duration=music21.duration.Duration(0.25))
         
+        n.volume.velocity = note.velocity
+        drums_part.append(n)
+    
+    # Add drum buildup
+    drum_buildup = edm_gen.create_drum_buildup(measures=4)
+    for note in drum_buildup.notes:
+        n = music21.note.Note(note.pitch, duration=music21.duration.Duration(0.25))
         n.volume.velocity = note.velocity
         drums_part.append(n)
     
