@@ -1,5 +1,8 @@
+Flask==2.3.3
 music21==8.3.0
-flask==3.0.0
-python-dotenv==1.0.0
-Werkzeug==3.0.1
 gunicorn==21.2.0
+python-dotenv==1.0.0
+Werkzeug==2.3.7
+magenta==2.1.4
+tensorflow==2.13.0
+note-seq==0.5.4

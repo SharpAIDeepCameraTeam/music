@@ -1,174 +1,181 @@
-import os
 import music21
+import os
 import random
+import numpy as np
+import note_seq
+import tensorflow as tf
+from magenta.models.melody_rnn import melody_rnn_sequence_generator
+from magenta.models.polyphony_rnn import polyphony_sequence_generator
+from magenta.models.shared import sequence_generator_bundle
+from note_seq import midi_io
+from note_seq.protobuf import generator_pb2
+from note_seq.protobuf import music_pb2
 
-def create_melody(key_obj, section_type, num_measures):
-    """Create a melody section."""
-    melody = []
-    scale = key_obj.getScale()
-    scale_pitches = [p for p in scale.pitches]
+class MagentaGenerator:
+    """Wrapper for Magenta's melody generation with music theory rules."""
     
-    # Different pitch patterns for A and B sections
-    if section_type == 'A':
-        # A section uses more stable scale degrees (1,3,5)
-        main_pitches = [scale_pitches[i] for i in [0, 2, 4]]
-    else:
-        # B section uses more varied pitches
-        main_pitches = [scale_pitches[i] for i in [1, 3, 5, 6]]
+    def __init__(self, model_name="attention_rnn"):
+        self.model_name = model_name
+        self.generator = self._create_generator()
+        self.key = music21.key.Key('G')
+        
+        # Common chord progressions in classical music
+        self.progressions = [
+            ['I', 'IV', 'V', 'I'],      # Basic authentic cadence
+            ['I', 'vi', 'IV', 'V'],     # Common pop progression
+            ['I', 'V', 'vi', 'IV'],     # Royal road progression
+            ['ii', 'V', 'I'],           # Two-five-one progression
+        ]
+        
+        # Cadence patterns
+        self.cadences = {
+            'perfect': ['V', 'I'],
+            'plagal': ['IV', 'I'],
+            'half': ['I', 'V'],
+            'deceptive': ['V', 'vi']
+        }
     
-    for _ in range(num_measures):
-        # Create a one-measure phrase
-        beats_remaining = 4.0  # 4/4 time
-        while beats_remaining > 0:
-            # Choose duration: whole, half, quarter, or eighth notes
-            duration = random.choice([4.0, 2.0, 1.0, 0.5])
-            if duration > beats_remaining:
-                duration = beats_remaining
-                
-            # Choose pitch
-            if random.random() < 0.7:  # 70% chance of main pitches
-                pitch = random.choice(main_pitches)
+    def _download_bundle(self):
+        """Download the bundle for the specified model."""
+        bundle_file = f"{self.model_name}.mag"
+        if not os.path.exists(bundle_file):
+            tf.io.gfile.copy(
+                f"https://storage.googleapis.com/magentadata/models/melody_rnn/{self.model_name}.mag",
+                bundle_file
+            )
+        return bundle_file
+    
+    def _create_generator(self):
+        """Create a MelodyRNN generator."""
+        bundle_file = self._download_bundle()
+        bundle = sequence_generator_bundle.read_bundle_file(bundle_file)
+        generator_map = melody_rnn_sequence_generator.get_generator_map()
+        generator = generator_map[self.model_name](checkpoint=None, bundle=bundle)
+        generator.initialize()
+        return generator
+    
+    def generate_melody(self, length=32, temperature=1.0):
+        """Generate a melody using Magenta with music theory constraints."""
+        # Create an empty sequence
+        steps_per_quarter = 4
+        qpm = 120
+        primer_sequence = music_pb2.NoteSequence()
+        primer_sequence.tempos.add(qpm=qpm)
+        primer_sequence.ticks_per_quarter = steps_per_quarter
+        
+        # Generate the sequence
+        generator_options = generator_pb2.GeneratorOptions()
+        generator_options.args['temperature'].float_value = temperature
+        generator_options.generate_sections.add(
+            start_time=0,
+            end_time=length
+        )
+        
+        sequence = self.generator.generate(primer_sequence, generator_options)
+        return sequence
+    
+    def apply_music_theory(self, sequence, style='lyrical'):
+        """Apply music theory rules to the generated sequence."""
+        stream = music21.stream.Stream()
+        
+        # Convert sequence to music21 notes
+        notes = []
+        for note in sequence.notes:
+            if style == 'lyrical':
+                # Add legato articulation
+                n = music21.note.Note(note.pitch)
+                n.duration = music21.duration.Duration(note.end_time - note.start_time)
+                if random.random() < 0.7:  # 70% chance of legato
+                    n.articulations.append(music21.articulations.Legato())
+                notes.append(n)
             else:
-                pitch = random.choice(scale_pitches)
-            
-            # Create note
-            note = music21.note.Note(pitch, quarterLength=duration)
-            
-            # Add dynamics for interest
-            if duration >= 2.0:
-                note.expressions.append(music21.expressions.Crescendo())
-            
-            melody.append(note)
-            beats_remaining -= duration
-            
-    return melody
+                # More rhythmic style
+                n = music21.note.Note(note.pitch)
+                n.duration = music21.duration.Duration(note.end_time - note.start_time)
+                if random.random() < 0.4:  # 40% chance of staccato
+                    n.articulations.append(music21.articulations.Staccato())
+                notes.append(n)
+        
+        # Add dynamics
+        for i, note in enumerate(notes):
+            if i % 16 == 0:  # Every 4 measures
+                dynamic = random.choice(['p', 'mp', 'mf', 'f'])
+                stream.append(music21.dynamics.Dynamic(dynamic))
+            stream.append(note)
+        
+        return stream
 
 def create_sequence_from_scratch():
-    """Create a new musical sequence from scratch."""
+    """Create a new musical sequence using Magenta with music theory."""
     score = music21.stream.Score()
     
-    # Create parts for each instrument
-    violin1 = music21.stream.Part()
-    violin2 = music21.stream.Part()
-    viola = music21.stream.Part()
-    cello = music21.stream.Part()
-    bass = music21.stream.Part()
+    # Create Magenta generator
+    magenta_gen = MagentaGenerator("attention_rnn")
     
-    # Set time signature and key
-    time_sig = music21.meter.TimeSignature('4/4')
-    key = music21.key.Key('G')  # G major, good for strings
+    # Generate parts
+    parts = {
+        'violin1': {'style': 'lyrical', 'octave': 1},    # Lead violin
+        'violin2': {'style': 'lyrical', 'octave': 0},    # Supporting violin
+        'viola': {'style': 'lyrical', 'octave': -1},     # Viola
+        'cello': {'style': 'rhythmic', 'octave': -2},    # Cello
+        'bass': {'style': 'rhythmic', 'octave': -3}      # Bass
+    }
     
-    # Add time signature and key to each part
-    for part in [violin1, violin2, viola, cello, bass]:
-        part.append(time_sig)
-        part.append(key)
+    # Generate and process each part
+    for part_name, settings in parts.items():
+        # Generate base melody
+        sequence = magenta_gen.generate_melody(
+            length=32,
+            temperature=1.0 if part_name == 'violin1' else 0.8
+        )
+        
+        # Transpose sequence to appropriate octave
+        for note in sequence.notes:
+            note.pitch += (12 * settings['octave'])
+            # Ensure notes stay in reasonable range
+            while note.pitch < 36:  # Lower limit
+                note.pitch += 12
+            while note.pitch > 96:  # Upper limit
+                note.pitch -= 12
+        
+        # Convert to music21 and apply music theory rules
+        stream = magenta_gen.apply_music_theory(sequence, settings['style'])
+        
+        # Create part
+        part = music21.stream.Part()
+        
+        # Add instrument
+        if part_name == 'violin1':
+            part.append(music21.instrument.Violin())
+            part.partName = "Violin I"
+        elif part_name == 'violin2':
+            part.append(music21.instrument.Violin())
+            part.partName = "Violin II"
+        elif part_name == 'viola':
+            part.append(music21.instrument.Viola())
+            part.partName = "Viola"
+        elif part_name == 'cello':
+            part.append(music21.instrument.Violoncello())
+            part.partName = "Violoncello"
+        else:  # bass
+            part.append(music21.instrument.Contrabass())
+            part.partName = "Contrabass"
+        
+        # Add key and time signature
+        part.append(music21.key.Key('G'))
+        part.append(music21.meter.TimeSignature('4/4'))
+        
+        # Add notes from the stream
+        for element in stream:
+            part.append(element)
+        
+        # Add to score
+        score.append(part)
     
-    # Create lead melody for Violin I (A section)
-    melody_a = [
-        ('G4', 2), ('B4', 2), ('D5', 2), ('G5', 2),  # Ascending G major
-        ('A5', 3), ('G5', 1), ('E5', 2), ('D5', 2),  # Melodic line
-        ('B4', 4), ('rest', 2), ('D5', 2),           # Rest and pickup
-        ('G5', 2), ('F#5', 1), ('E5', 1), ('D5', 2), ('B4', 2)  # Descending line
-    ]
-    
-    # B section melody (more dramatic)
-    melody_b = [
-        ('A5', 2), ('B5', 2), ('C6', 3), ('A5', 1),  # Higher register
-        ('G5', 2), ('E5', 2), ('F#5', 3), ('D5', 1),  # Moving line
-        ('E5', 2), ('G5', 2), ('F#5', 3), ('E5', 1),  # Tension building
-        ('D5', 4), ('rest', 2), ('D5', 2)             # Resolution
-    ]
-    
-    # Function to create harmony notes based on melody
-    def create_harmony(melody_note, chord_type='major'):
-        if melody_note == 'rest':
-            return ['rest'] * 4
-        note_obj = music21.note.Note(melody_note)
-        if chord_type == 'major':
-            intervals = [3, 5, 7]  # Major chord
-        else:
-            intervals = [3, 5, 7]  # Could be modified for minor
-        harmony = []
-        for interval in intervals:
-            harmony_note = note_obj.transpose(interval)
-            harmony.append(harmony_note.nameWithOctave)
-        return harmony
-    
-    # Add notes to Violin I (lead)
-    def add_melody_to_violin1(melody):
-        for pitch, duration in melody:
-            if pitch == 'rest':
-                n = music21.note.Rest()
-            else:
-                n = music21.note.Note(pitch)
-            n.duration.quarterLength = duration
-            violin1.append(n)
-    
-    # Add harmony to other strings
-    def add_harmony(melody, parts):
-        for pitch, duration in melody:
-            harmony = create_harmony(pitch if pitch != 'rest' else 'rest')
-            for part, harm_pitch in zip(parts, harmony):
-                if harm_pitch == 'rest':
-                    n = music21.note.Rest()
-                else:
-                    n = music21.note.Note(harm_pitch)
-                    # Make harmony slightly softer than melody
-                    n.volume.velocity = 64
-                n.duration.quarterLength = duration
-                part.append(n)
-    
-    # Create A section
-    add_melody_to_violin1(melody_a)
-    add_harmony(melody_a, [violin2, viola, cello])
-    # Bass plays root notes
-    for pitch, duration in melody_a:
-        if pitch == 'rest':
-            n = music21.note.Rest()
-        else:
-            note_obj = music21.note.Note(pitch)
-            bass_note = note_obj.transpose(-12)  # One octave down
-            n = music21.note.Note(bass_note.nameWithOctave)
-            n.volume.velocity = 72
-        n.duration.quarterLength = duration
-        bass.append(n)
-    
-    # Create B section
-    add_melody_to_violin1(melody_b)
-    add_harmony(melody_b, [violin2, viola, cello])
-    # Bass continues with root notes
-    for pitch, duration in melody_b:
-        if pitch == 'rest':
-            n = music21.note.Rest()
-        else:
-            note_obj = music21.note.Note(pitch)
-            bass_note = note_obj.transpose(-12)
-            n = music21.note.Note(bass_note.nameWithOctave)
-            n.volume.velocity = 72
-        n.duration.quarterLength = duration
-        bass.append(n)
-    
-    # Repeat A section
-    add_melody_to_violin1(melody_a)
-    add_harmony(melody_a, [violin2, viola, cello])
-    for pitch, duration in melody_a:
-        if pitch == 'rest':
-            n = music21.note.Rest()
-        else:
-            note_obj = music21.note.Note(pitch)
-            bass_note = note_obj.transpose(-12)
-            n = music21.note.Note(bass_note.nameWithOctave)
-            n.volume.velocity = 72
-        n.duration.quarterLength = duration
-        bass.append(n)
-    
-    # Add dynamics
-    for part in [violin1, violin2, viola, cello, bass]:
-        f = music21.dynamics.Dynamic('f')
-        part.insert(0, f)
-    
-    # Add parts to score
-    score.append([violin1, violin2, viola, cello, bass])
+    # Add metadata
+    score.metadata = music21.metadata.Metadata()
+    score.metadata.title = "Generated String Orchestra Piece"
+    score.metadata.composer = "SoundWave Studios (via Magenta)"
     
     return score
 
@@ -185,36 +192,12 @@ def export_to_musicxml(score, output_path):
         # Add metadata
         score.metadata = music21.metadata.Metadata()
         score.metadata.composer = 'SoundWave Studios'
-        score.metadata.title = 'Orchestral Piece in ABA Form'
+        score.metadata.title = 'Generated String Orchestra Piece'
         
         # Add identification information
         score.metadata.encoder = 'SoundWave Studios'
-        score.metadata.software = 'music21 v8.3.0'
+        score.metadata.software = 'music21 v8.3.0 with Magenta'
         score.metadata.encodingDate = music21.metadata.DateSingle('2024')
-        
-        # Set part names
-        part_names = [
-            ("Violin I", "Vln. I"),
-            ("Violin II", "Vln. II"),
-            ("Viola", "Vla."),
-            ("Violoncello", "Vc."),
-            ("Contrabass", "Cb.")
-        ]
-        
-        # Create part group for strings
-        part_group = music21.layout.StaffGroup(
-            [score.parts[i] for i in range(len(score.parts))],
-            name='Strings',
-            abbreviation='Str.',
-            symbol='bracket'
-        )
-        score.insert(0, part_group)
-        
-        # Set part names and staff groups
-        for part, (name, abbrev) in zip(score.parts, part_names):
-            part.partName = name
-            part.partAbbreviation = abbrev
-            part.staffGroup = ['strings']
         
         # Export to MusicXML
         temp_path = output_path + '.tmp'
