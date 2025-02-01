@@ -1,33 +1,29 @@
 # Use Python 3.9 for better compatibility with TensorFlow and Magenta
 FROM python:3.9-slim
 
-# Set working directory
-WORKDIR /app
-
 # Install system dependencies
 RUN apt-get update && apt-get install -y \
     build-essential \
-    libffi-dev \
     libasound2-dev \
     libjack-dev \
     portaudio19-dev \
+    libsndfile1 \
+    ffmpeg \
     && rm -rf /var/lib/apt/lists/*
 
-# Copy requirements file
-COPY requirements.txt ./
+# Set working directory
+WORKDIR /app
 
-# Install base dependencies first
-RUN pip install --no-cache-dir \
-    numpy \
-    typing_extensions \
-    six==1.16.0 \
-    Pillow==9.2.0
+# Copy requirements first for better caching
+COPY requirements.txt .
 
-# Install tensorflow separately to handle its dependencies
-RUN pip install --no-cache-dir tensorflow==2.13.0
-
-# Install remaining Python packages
-RUN pip install --no-cache-dir -r requirements.txt
+# Install Python packages in order of dependency
+RUN pip install --no-cache-dir numpy==1.23.5 \
+    && pip install --no-cache-dir tensorflow==2.9.1 \
+    && pip install --no-cache-dir protobuf==3.19.6 \
+    && pip install --no-cache-dir six==1.16.0 \
+    && pip install --no-cache-dir absl-py==1.2.0 \
+    && pip install --no-cache-dir -r requirements.txt
 
 # Copy the application code
 COPY . .
