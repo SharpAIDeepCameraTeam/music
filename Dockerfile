@@ -13,16 +13,23 @@ RUN apt-get update && apt-get install -y \
     portaudio19-dev \
     && rm -rf /var/lib/apt/lists/*
 
-# Copy requirements first for better caching
+# Copy requirements file
 COPY requirements.txt ./
 
-# Install numpy and typing_extensions first
-RUN pip install --no-cache-dir numpy typing_extensions
+# Install base dependencies first
+RUN pip install --no-cache-dir \
+    numpy \
+    typing_extensions \
+    six==1.16.0 \
+    Pillow==9.2.0
 
-# Install Python packages
+# Install tensorflow separately to handle its dependencies
+RUN pip install --no-cache-dir tensorflow==2.13.0
+
+# Install remaining Python packages
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy application code
+# Copy the application code
 COPY . .
 
 # Set environment variables

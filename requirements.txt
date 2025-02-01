@@ -3,6 +3,9 @@ music21==8.3.0
 gunicorn==21.2.0
 python-dotenv==1.0.0
 Werkzeug==2.3.7
+note-seq==0.0.3
 magenta==2.1.4
 tensorflow==2.13.0
-note-seq==0.0.5
+six==1.16.0
+matplotlib==3.5.2
+Pillow==9.2.0
