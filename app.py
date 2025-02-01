@@ -58,7 +58,7 @@ def index():
                             const url = window.URL.createObjectURL(blob);
                             const a = document.createElement('a');
                             a.href = url;
-                            a.download = 'generated_music.musicxml';
+                            a.download = 'generated_music.xml';
                             document.body.appendChild(a);
                             a.click();
                             window.URL.revokeObjectURL(url);
@@ -77,20 +77,20 @@ def index():
 @app.route('/generate')
 def generate():
     try:
-        # Create a temporary file
-        with tempfile.NamedTemporaryFile(suffix='.musicxml', delete=False) as tmp:
+        # Create a temporary file with .xml extension
+        with tempfile.NamedTemporaryFile(suffix='.xml', delete=False) as tmp:
             # Generate the music score
             score = create_sequence_from_scratch()
             
             # Export to MusicXML
             export_to_musicxml(score, tmp.name)
             
-            # Send the file
+            # Send the file with correct MIME type
             return send_file(
                 tmp.name,
                 mimetype='application/vnd.recordare.musicxml+xml',
                 as_attachment=True,
-                download_name='generated_music.musicxml'
+                download_name='generated_music.xml'
             )
     except Exception as e:
         return jsonify({'error': str(e)}), 500

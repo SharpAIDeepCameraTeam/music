@@ -146,8 +146,23 @@ def export_to_musicxml(score, output_path):
         for part, (name, abbrev) in zip(score.parts, part_names):
             part.partName = name
             part.partAbbreviation = abbrev
+            # Add staff group
+            part.staffGroup = ['strings']
+        
+        # Add identification information
+        if not score.metadata:
+            score.metadata = music21.metadata.Metadata()
+        score.metadata.composer = 'SoundWave Studios'
+        score.metadata.title = 'Orchestral Piece in ABA Form'
+        score.metadata.date = music21.metadata.DateSingle('2024')
         
         # Export to MusicXML
-        score.write('musicxml', fp=output_path)
+        # Use format='musicxml' instead of just 'xml' for better compatibility
+        score.write(fmt='musicxml', fp=output_path, makeNotation=True)
+        
+        # Verify the file was created and has content
+        if not os.path.exists(output_path) or os.path.getsize(output_path) == 0:
+            raise Exception("Failed to create MusicXML file or file is empty")
+            
     except Exception as e:
         raise Exception(f"Error exporting to MusicXML: {str(e)}")
