@@ -1,0 +1,14 @@
+__pycache__/
+*.py[cod]
+*$py.class
+.env
+.venv
+env/
+venv/
+ENV/
+*.musicxml
+*.mid
+*.midi
+*.mag
+uploads/
+*.DS_Store

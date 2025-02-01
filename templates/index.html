@@ -1,0 +1,308 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>String Music Generator</title>
+    <style>
+        body {
+            font-family: 'Arial', sans-serif;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            display: flex;
+            gap: 20px;
+        }
+        .form-container {
+            flex: 1;
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .result-container {
+            flex: 1;
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            display: none;
+        }
+        .form-group {
+            margin-bottom: 15px;
+        }
+        label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: bold;
+        }
+        select, input[type="number"], input[type="file"] {
+            width: 100%;
+            padding: 8px;
+            margin-bottom: 10px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+        }
+        .btn {
+            background-color: #4CAF50;
+            color: white;
+            padding: 10px 20px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            margin-right: 10px;
+        }
+        .btn:disabled {
+            background-color: #cccccc;
+            cursor: not-allowed;
+        }
+        .btn-secondary {
+            background-color: #2196F3;
+        }
+        .loading {
+            display: none;
+            margin-top: 20px;
+            text-align: center;
+            color: #666;
+        }
+        .loading.visible {
+            display: block;
+        }
+        #xmlContent {
+            width: 100%;
+            height: 400px;
+            font-family: monospace;
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            white-space: pre;
+            overflow: auto;
+            background: #f8f9fa;
+        }
+        .error-message {
+            color: #dc3545;
+            margin-top: 10px;
+            padding: 10px;
+            border: 1px solid #dc3545;
+            border-radius: 4px;
+            display: none;
+        }
+        .success-message {
+            color: #28a745;
+            margin-top: 10px;
+            padding: 10px;
+            border: 1px solid #28a745;
+            border-radius: 4px;
+            display: none;
+        }
+        h1 {
+            color: #2c3e50;
+            text-align: center;
+            margin-bottom: 30px;
+        }
+        .upload-form {
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+        }
+        .instructions {
+            margin-top: 30px;
+            padding: 20px;
+            background-color: #f8f9fa;
+            border-radius: 5px;
+        }
+        .temperature-value {
+            text-align: center;
+            margin-top: 5px;
+        }
+        .optional-label {
+            color: #7f8c8d;
+            font-size: 0.9em;
+            font-weight: normal;
+        }
+    </style>
+</head>
+<body>
+    <h1>String Music Generator</h1>
+    
+    <div class="container">
+        <div class="form-container">
+            <form id="generatorForm" action="/generate" method="post" enctype="multipart/form-data">
+                <div class="form-group">
+                    <label for="file">Upload MIDI or MusicXML File <span class="optional-label">(Optional)</span></label>
+                    <div class="file-input">
+                        <input type="file" name="file" accept=".mid,.midi,.musicxml,.xml">
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label for="key">Musical Key</label>
+                    <select name="key" id="key" required>
+                        {% for key in keys %}
+                        <option value="{{ key }}" {% if key == 'C' %}selected{% endif %}>{{ key }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+
+                <div class="form-group">
+                    <label for="time_signature">Time Signature</label>
+                    <select name="time_signature" id="time_signature" required>
+                        {% for ts in time_signatures %}
+                        <option value="{{ ts }}" {% if ts == '4/4' %}selected{% endif %}>{{ ts }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+
+                <div class="form-group">
+                    <label for="tempo">Tempo (BPM)</label>
+                    <input type="number" name="tempo" id="tempo" value="120" min="40" max="200" required>
+                </div>
+
+                <div class="form-group">
+                    <label for="temperature">Creativity Level (Temperature)</label>
+                    <input type="range" name="temperature" id="temperature" 
+                           min="0.1" max="2.0" step="0.1" value="1.0" 
+                           oninput="updateTemperature(this.value)">
+                    <div id="temperature-value" class="temperature-value">1.0</div>
+                </div>
+
+                <button type="submit" id="generateBtn" class="btn">Generate Music</button>
+            </form>
+            
+            <div id="loading" class="loading">
+                <p>Generating your music... Please wait...</p>
+            </div>
+
+            <div id="errorMessage" class="error-message"></div>
+            <div id="successMessage" class="success-message"></div>
+        </div>
+        
+        <div id="resultContainer" class="result-container">
+            <h2>Generated Music</h2>
+            <div class="form-group">
+                <button onclick="downloadMusicXML()" class="btn">Download MusicXML</button>
+                <button onclick="toggleRawXML()" class="btn btn-secondary">Toggle Raw XML</button>
+            </div>
+            <pre id="xmlContent"></pre>
+        </div>
+    </div>
+
+    <div class="instructions">
+        <h3>Instructions:</h3>
+        <ol>
+            <li>Optionally upload a MIDI or MusicXML file to use as inspiration.</li>
+            <li>Choose your desired musical key and time signature.</li>
+            <li>Set the tempo (speed) in beats per minute.</li>
+            <li>Adjust the creativity level:
+                <ul>
+                    <li>Lower values (0.1-0.5): More predictable, conservative output</li>
+                    <li>Medium values (0.6-1.4): Balanced creativity</li>
+                    <li>Higher values (1.5-2.0): More experimental, unexpected output</li>
+                </ul>
+            </li>
+            <li>Click "Generate Music" to create your arrangement.</li>
+        </ol>
+        <p><strong>Note:</strong> The generated arrangement will include parts for:</p>
+        <ul>
+            <li>First Violins (melody)</li>
+            <li>Second Violins (harmony)</li>
+            <li>Violas (harmony)</li>
+            <li>Cellos (bass line)</li>
+            <li>Double Basses (reinforced bass)</li>
+        </ul>
+    </div>
+
+    <script>
+        let isRawView = false;
+        let requestTimeout;
+        
+        document.getElementById('generatorForm').onsubmit = function(e) {
+            e.preventDefault();
+            
+            // Hide previous messages and results
+            document.getElementById('errorMessage').style.display = 'none';
+            document.getElementById('successMessage').style.display = 'none';
+            document.getElementById('resultContainer').style.display = 'none';
+            
+            // Disable the button and show loading
+            document.getElementById('generateBtn').disabled = true;
+            document.getElementById('loading').classList.add('visible');
+            
+            // Create FormData object
+            const formData = new FormData(this);
+            
+            // Set a timeout to show error if request takes too long
+            clearTimeout(requestTimeout);
+            requestTimeout = setTimeout(() => {
+                document.getElementById('errorMessage').textContent = 'Request timed out. Please try again.';
+                document.getElementById('errorMessage').style.display = 'block';
+                document.getElementById('generateBtn').disabled = false;
+                document.getElementById('loading').classList.remove('visible');
+            }, 30000); // 30 seconds timeout
+            
+            // Send request
+            fetch('/generate', {
+                method: 'POST',
+                body: formData
+            })
+            .then(response => {
+                clearTimeout(requestTimeout);
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+                return response.json();
+            })
+            .then(data => {
+                if (data.status === 'success') {
+                    // Show success message
+                    document.getElementById('successMessage').textContent = data.message;
+                    document.getElementById('successMessage').style.display = 'block';
+                    
+                    // Show XML content
+                    document.getElementById('xmlContent').textContent = data.xml_content;
+                    document.getElementById('resultContainer').style.display = 'block';
+                } else {
+                    // Show error message
+                    throw new Error(data.message || 'An error occurred during music generation');
+                }
+            })
+            .catch(error => {
+                document.getElementById('errorMessage').textContent = 'An error occurred: ' + error.message;
+                document.getElementById('errorMessage').style.display = 'block';
+            })
+            .finally(() => {
+                // Re-enable the button and hide loading
+                document.getElementById('generateBtn').disabled = false;
+                document.getElementById('loading').classList.remove('visible');
+                clearTimeout(requestTimeout);
+            });
+            
+            return false;
+        };
+        
+        function downloadMusicXML() {
+            window.location.href = '/download';
+        }
+        
+        function toggleRawXML() {
+            const xmlContent = document.getElementById('xmlContent');
+            isRawView = !isRawView;
+            
+            if (isRawView) {
+                xmlContent.style.whiteSpace = 'pre-wrap';
+                xmlContent.style.wordBreak = 'break-all';
+            } else {
+                xmlContent.style.whiteSpace = 'pre';
+                xmlContent.style.wordBreak = 'normal';
+            }
+        }
+        
+        function updateTemperature(value) {
+            document.getElementById('temperature-value').textContent = value;
+        }
+    </script>
+</body>
+</html>
