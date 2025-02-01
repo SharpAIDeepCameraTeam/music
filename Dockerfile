@@ -17,13 +17,14 @@ WORKDIR /app
 # Copy requirements first for better caching
 COPY requirements.txt .
 
-# Install Python packages in order of dependency
-RUN pip install --no-cache-dir numpy==1.23.5 \
-    && pip install --no-cache-dir tensorflow==2.9.1 \
-    && pip install --no-cache-dir protobuf==3.19.6 \
-    && pip install --no-cache-dir six==1.16.0 \
-    && pip install --no-cache-dir absl-py==1.2.0 \
-    && pip install --no-cache-dir -r requirements.txt
+# Install Python packages in specific order to handle dependencies
+RUN pip install --no-cache-dir numpy==1.23.5 && \
+    pip install --no-cache-dir h5py==3.1.0 && \
+    pip install --no-cache-dir tensorflow==2.9.1 && \
+    pip install --no-cache-dir tensorflow-io-gcs-filesystem==0.23.1 && \
+    pip install --no-cache-dir protobuf==3.19.6 && \
+    pip install --no-cache-dir keras==2.9.0 && \
+    pip install --no-cache-dir -r requirements.txt
 
 # Copy the application code
 COPY . .
