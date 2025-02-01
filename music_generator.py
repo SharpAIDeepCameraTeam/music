@@ -5,176 +5,159 @@ import numpy as np
 import note_seq
 import tensorflow as tf
 from magenta.models.melody_rnn import melody_rnn_sequence_generator
-from magenta.models.polyphony_rnn import polyphony_sequence_generator
+from magenta.models.drums_rnn import drums_rnn_sequence_generator
 from magenta.models.shared import sequence_generator_bundle
+from magenta.music import drums_lib
+from magenta.music import sequences_lib
 from note_seq import midi_io
 from note_seq.protobuf import generator_pb2
 from note_seq.protobuf import music_pb2
 
-class MagentaGenerator:
-    """Wrapper for Magenta's melody generation with music theory rules."""
+class EDMGenerator:
+    """Generator for EDM music with Magenta."""
     
-    def __init__(self, model_name="attention_rnn"):
-        self.model_name = model_name
-        self.generator = self._create_generator()
-        self.key = music21.key.Key('G')
+    def __init__(self):
+        self.melody_model = "attention_rnn"
+        self.drums_model = "drum_kit_rnn"
+        self.melody_generator = self._create_melody_generator()
+        self.drums_generator = self._create_drums_generator()
         
-        # Common chord progressions in classical music
+        # EDM-specific parameters
+        self.bpm = 128  # Standard EDM tempo
+        self.key = 'C'  # We'll use C minor for that EDM feel
+        self.scale = music21.scale.MinorScale(self.key)
+        
+        # Common EDM chord progressions
         self.progressions = [
-            ['I', 'IV', 'V', 'I'],      # Basic authentic cadence
-            ['I', 'vi', 'IV', 'V'],     # Common pop progression
-            ['I', 'V', 'vi', 'IV'],     # Royal road progression
-            ['ii', 'V', 'I'],           # Two-five-one progression
+            ['i', 'VI', 'III', 'VII'],  # Epic progressive house
+            ['i', 'v', 'VI', 'III'],    # Future bass style
+            ['i', 'III', 'VII', 'VI'],  # Trance progression
         ]
-        
-        # Cadence patterns
-        self.cadences = {
-            'perfect': ['V', 'I'],
-            'plagal': ['IV', 'I'],
-            'half': ['I', 'V'],
-            'deceptive': ['V', 'vi']
-        }
     
-    def _download_bundle(self):
+    def _download_bundle(self, model_name):
         """Download the bundle for the specified model."""
-        bundle_file = f"{self.model_name}.mag"
+        bundle_file = f"{model_name}.mag"
         if not os.path.exists(bundle_file):
-            tf.io.gfile.copy(
-                f"https://storage.googleapis.com/magentadata/models/melody_rnn/{self.model_name}.mag",
-                bundle_file
-            )
+            if "drum" in model_name:
+                url = f"https://storage.googleapis.com/magentadata/models/drums_rnn/{bundle_file}"
+            else:
+                url = f"https://storage.googleapis.com/magentadata/models/melody_rnn/{bundle_file}"
+            tf.io.gfile.copy(url, bundle_file)
         return bundle_file
     
-    def _create_generator(self):
+    def _create_melody_generator(self):
         """Create a MelodyRNN generator."""
-        bundle_file = self._download_bundle()
+        bundle_file = self._download_bundle(self.melody_model)
         bundle = sequence_generator_bundle.read_bundle_file(bundle_file)
         generator_map = melody_rnn_sequence_generator.get_generator_map()
-        generator = generator_map[self.model_name](checkpoint=None, bundle=bundle)
+        generator = generator_map[self.melody_model](checkpoint=None, bundle=bundle)
         generator.initialize()
         return generator
     
-    def generate_melody(self, length=32, temperature=1.0):
-        """Generate a melody using Magenta with music theory constraints."""
-        # Create an empty sequence
+    def _create_drums_generator(self):
+        """Create a DrumsRNN generator."""
+        bundle_file = self._download_bundle(self.drums_model)
+        bundle = sequence_generator_bundle.read_bundle_file(bundle_file)
+        generator_map = drums_rnn_sequence_generator.get_generator_map()
+        generator = generator_map[self.drums_model](checkpoint=None, bundle=bundle)
+        generator.initialize()
+        return generator
+    
+    def generate_edm_melody(self, length=32):
+        """Generate an EDM-style melody."""
         steps_per_quarter = 4
-        qpm = 120
         primer_sequence = music_pb2.NoteSequence()
-        primer_sequence.tempos.add(qpm=qpm)
+        primer_sequence.tempos.add(qpm=self.bpm)
         primer_sequence.ticks_per_quarter = steps_per_quarter
         
-        # Generate the sequence
+        # Generate with high temperature for more variation
         generator_options = generator_pb2.GeneratorOptions()
-        generator_options.args['temperature'].float_value = temperature
+        generator_options.args['temperature'].float_value = 1.2
         generator_options.generate_sections.add(
             start_time=0,
             end_time=length
         )
         
-        sequence = self.generator.generate(primer_sequence, generator_options)
+        sequence = self.melody_generator.generate(primer_sequence, generator_options)
+        
+        # Post-process for EDM style
+        for note in sequence.notes:
+            # Quantize to 16th notes
+            note.start_time = round(note.start_time * 4) / 4
+            note.end_time = round(note.end_time * 4) / 4
+            # Add velocity variation for dynamics
+            note.velocity = random.randint(80, 127)
+        
         return sequence
     
-    def apply_music_theory(self, sequence, style='lyrical'):
-        """Apply music theory rules to the generated sequence."""
-        stream = music21.stream.Stream()
+    def generate_drum_groove(self, length=32):
+        """Generate a drum groove using Magenta's drums model."""
+        steps_per_quarter = 4
+        primer_sequence = music_pb2.NoteSequence()
+        primer_sequence.tempos.add(qpm=self.bpm)
+        primer_sequence.ticks_per_quarter = steps_per_quarter
         
-        # Convert sequence to music21 notes
-        notes = []
-        for note in sequence.notes:
-            if style == 'lyrical':
-                # Add legato articulation
-                n = music21.note.Note(note.pitch)
-                n.duration = music21.duration.Duration(note.end_time - note.start_time)
-                if random.random() < 0.7:  # 70% chance of legato
-                    n.articulations.append(music21.articulations.Legato())
-                notes.append(n)
-            else:
-                # More rhythmic style
-                n = music21.note.Note(note.pitch)
-                n.duration = music21.duration.Duration(note.end_time - note.start_time)
-                if random.random() < 0.4:  # 40% chance of staccato
-                    n.articulations.append(music21.articulations.Staccato())
-                notes.append(n)
-        
-        # Add dynamics
-        for i, note in enumerate(notes):
-            if i % 16 == 0:  # Every 4 measures
-                dynamic = random.choice(['p', 'mp', 'mf', 'f'])
-                stream.append(music21.dynamics.Dynamic(dynamic))
-            stream.append(note)
-        
-        return stream
-
-def create_sequence_from_scratch():
-    """Create a new musical sequence using Magenta with music theory."""
-    score = music21.stream.Score()
-    
-    # Create Magenta generator
-    magenta_gen = MagentaGenerator("attention_rnn")
-    
-    # Generate parts
-    parts = {
-        'violin1': {'style': 'lyrical', 'octave': 1},    # Lead violin
-        'violin2': {'style': 'lyrical', 'octave': 0},    # Supporting violin
-        'viola': {'style': 'lyrical', 'octave': -1},     # Viola
-        'cello': {'style': 'rhythmic', 'octave': -2},    # Cello
-        'bass': {'style': 'rhythmic', 'octave': -3}      # Bass
-    }
-    
-    # Generate and process each part
-    for part_name, settings in parts.items():
-        # Generate base melody
-        sequence = magenta_gen.generate_melody(
-            length=32,
-            temperature=1.0 if part_name == 'violin1' else 0.8
+        # Generate with moderate temperature for groove consistency
+        generator_options = generator_pb2.GeneratorOptions()
+        generator_options.args['temperature'].float_value = 0.9
+        generator_options.generate_sections.add(
+            start_time=0,
+            end_time=length
         )
         
-        # Transpose sequence to appropriate octave
-        for note in sequence.notes:
-            note.pitch += (12 * settings['octave'])
-            # Ensure notes stay in reasonable range
-            while note.pitch < 36:  # Lower limit
-                note.pitch += 12
-            while note.pitch > 96:  # Upper limit
-                note.pitch -= 12
+        sequence = self.drums_generator.generate(primer_sequence, generator_options)
         
-        # Convert to music21 and apply music theory rules
-        stream = magenta_gen.apply_music_theory(sequence, settings['style'])
+        # Post-process for EDM style
+        drums_lib.add_drums(sequence, drums_lib.DEFAULT_DRUM_TYPE)
+        return sequence
+
+def create_edm_track():
+    """Create a complete EDM track with melody and drums."""
+    score = music21.stream.Score()
+    
+    # Create EDM generator
+    edm_gen = EDMGenerator()
+    
+    # Generate parts
+    melody_sequence = edm_gen.generate_edm_melody(length=32)
+    drums_sequence = edm_gen.generate_drum_groove(length=32)
+    
+    # Convert melody sequence to music21
+    melody_part = music21.stream.Part()
+    melody_part.append(music21.instrument.ElectricPiano())  # Synth lead
+    melody_part.append(music21.tempo.MetronomeMark(number=edm_gen.bpm))
+    
+    for note in melody_sequence.notes:
+        n = music21.note.Note(note.pitch)
+        n.duration = music21.duration.Duration(note.end_time - note.start_time)
+        n.volume.velocity = note.velocity
+        melody_part.append(n)
+    
+    # Convert drum sequence to music21
+    drums_part = music21.stream.Part()
+    drums_part.append(music21.instrument.BassDrum())  # EDM drums
+    
+    for note in drums_sequence.notes:
+        # Map drum pitches to standard MIDI drum map
+        if note.pitch in [36, 35]:  # Bass drum
+            n = music21.note.Note(36, duration=music21.duration.Duration(0.25))
+        elif note.pitch in [38, 40]:  # Snare
+            n = music21.note.Note(38, duration=music21.duration.Duration(0.25))
+        elif note.pitch in [42, 44, 46]:  # Hi-hat
+            n = music21.note.Note(42, duration=music21.duration.Duration(0.25))
+        else:  # Other percussion
+            n = music21.note.Note(note.pitch, duration=music21.duration.Duration(0.25))
         
-        # Create part
-        part = music21.stream.Part()
-        
-        # Add instrument
-        if part_name == 'violin1':
-            part.append(music21.instrument.Violin())
-            part.partName = "Violin I"
-        elif part_name == 'violin2':
-            part.append(music21.instrument.Violin())
-            part.partName = "Violin II"
-        elif part_name == 'viola':
-            part.append(music21.instrument.Viola())
-            part.partName = "Viola"
-        elif part_name == 'cello':
-            part.append(music21.instrument.Violoncello())
-            part.partName = "Violoncello"
-        else:  # bass
-            part.append(music21.instrument.Contrabass())
-            part.partName = "Contrabass"
-        
-        # Add key and time signature
-        part.append(music21.key.Key('G'))
-        part.append(music21.meter.TimeSignature('4/4'))
-        
-        # Add notes from the stream
-        for element in stream:
-            part.append(element)
-        
-        # Add to score
-        score.append(part)
+        n.volume.velocity = note.velocity
+        drums_part.append(n)
+    
+    # Add parts to score
+    score.append(melody_part)
+    score.append(drums_part)
     
     # Add metadata
     score.metadata = music21.metadata.Metadata()
-    score.metadata.title = "Generated String Orchestra Piece"
+    score.metadata.title = "Generated EDM Track"
     score.metadata.composer = "SoundWave Studios (via Magenta)"
     
     return score
@@ -192,7 +175,7 @@ def export_to_musicxml(score, output_path):
         # Add metadata
         score.metadata = music21.metadata.Metadata()
         score.metadata.composer = 'SoundWave Studios'
-        score.metadata.title = 'Generated String Orchestra Piece'
+        score.metadata.title = 'Generated EDM Track'
         
         # Add identification information
         score.metadata.encoder = 'SoundWave Studios'
