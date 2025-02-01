@@ -7,6 +7,14 @@ service:
     ports:
       - port: 5001
         protocol: http
+    healthcheck:
+      port: 5001
+      path: /
+      initial_delay: 30s
+      interval: 15s
+      timeout: 5s
+      success_threshold: 1
+      failure_threshold: 3
     routes:
       - path: /
         port: 5001
